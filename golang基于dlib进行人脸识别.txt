@@ -1,0 +1,79 @@
+ubuntu14.04/raspberry上使用golang基于dlib进行人脸识别：
+	一、安装依赖：
+	1.1.安装dlib:
+	ubuntu14.04/ubuntu18.04:
+		sudo add-apt-repository ppa:kagamih/dlib
+		sudo apt-get update
+		sudo apt-get install libdlib-dev libjpeg-turbo8-dev
+	debian:
+		sudo apt-get install libdlib-dev libopenblas-dev libjpeg62-turbo-dev
+	ubuntu18.10+:
+		sudo apt-get install libdlib-dev libopenblas-dev  libjpeg-turbo8-dev
+		
+	1.2.针对18.04 AND DEBIAN SID,创建/usr/local/lib/pkgconfig/dlib-1.pc，添加内容：
+		sudo mkdir -p /usr/local/lib/pkgconfig/
+		sudo vi /usr/local/lib/pkgconfig/dlib-1.pc
+		添加内容如下：
+			libdir=/usr/lib/x86_64-linux-gnu
+			includedir=/usr/include
+
+			Name: dlib
+			Description: Numerical and networking C++ library
+			Version: 19.10.0
+			Libs: -L${libdir} -ldlib -lblas -llapack
+			Cflags: -I${includedir}
+			Requires:
+			
+			若出现错误提示：
+				matrix_fft.h:12:10: fatal error: mkl_dfti.h: No such file or directory
+			解决办法：
+				修改上面的添加内容为如下：
+				Libs: -L${libdir} -ldlib -lblas -llapack -L/opt/intel/compilers_and_libraries_2018.3.222/linux/mkl/lib/
+				Cflags: -I${includedir} -I/opt/intel/compilers_and_libraries_2018.3.222/linux/mkl/include/
+	二、安装go-face库：
+	2.1.go get -u github.com/Kagami/go-face
+	错误：‘shared_mutex’ in namespace ‘std’ does not name a type
+	解决：升级gcc编译器到7.3(树莓派编译器版本：6.5.0)
+	
+		sudo apt-get install gcc-7
+		sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 100
+		sudo update-alternatives --config gcc
+		
+		sudo apt-get install g++-7
+		sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 100
+		sudo update-alternatives --config g++
+		
+		sudo update-alternatives --install /usr/bin/gcc-ar gcc-ar /usr/bin/gcc-ar-7 100
+		sudo update-alternatives --config gcc-ar
+		sudo update-alternatives --install /usr/bin/gcc-nm gcc-nm /usr/bin/gcc-nm-7 100
+		sudo update-alternatives --config gcc-nm
+		sudo update-alternatives --install /usr/bin/gcc-ranlib gcc-ranlib /usr/bin/gcc-ranlib-7 100
+		sudo update-alternatives --config gcc-ranlib
+		g++ -v
+		gcc -v
+	三、 测试：
+		cd $GOPATH/src/github.com/Kagami/go-face/
+		make test
+		
+		注意：树莓派上运行时，face.go的117/121/125行需要修改如下：
+			//rData := (*[1 << 30]C.long)(rDataPtr)[:rDataLen:rDataLen]
+			rData := (*[1<<15]C.long)(rDataPtr)[:rDataLen:rDataLen]
+			//dData := (*[1 << 30]float32)(dDataPtr)[:dDataLen:dDataLen]
+			dData := (*[1 << 15]float32)(dDataPtr)[:dDataLen:dDataLen]
+			//sData := (*[1 << 30]C.long)(sDataPtr)[:sDataLen:sDataLen]
+			sData := (*[1 << 15]C.long)(sDataPtr)[:sDataLen:sDataLen]
+
+	四、使用：
+		cd go-face-recognition-dlib
+		添加识别样例，单张单目标识别(test 1),单张多目标识别(test 2),实时取摄像头流识别(test 3):
+			go run main.go
+	五、注意：How to improve recognition accuracy
+		There are few suggestions:
+		* Try CNN recognizing
+		* Try different tolerance values of `ClassifyThreshold`
+		* Try different size/padding/jittering values of `NewRecognizerWithConfig`
+		* Implement better classify heuristics (see [classify.cc](classify.cc))
+		* [Train](https://blog.dlib.net/2017/02/high-quality-face-recognition-with-deep.html) network (`dlib_face_recognition_resnet_model_v1.dat`) on your own test data
+
+		
+		

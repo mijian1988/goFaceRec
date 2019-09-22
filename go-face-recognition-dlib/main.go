@@ -1,0 +1,390 @@
+package main
+
+import (
+	"fmt"
+	"github.com/Kagami/go-face"
+	"gocv.io/x/gocv"
+	"image"
+	"image/color"
+	"io/ioutil"
+	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+)
+
+const dataDir = "images"
+const modelsDir = "models"
+const testDir = "testimages"
+
+
+func CheckErr(err error) {
+	if nil != err {
+		panic(err)
+	}
+}
+
+
+func singleObjShowRectangleWithName(imgPath string,name[] string){
+	window := gocv.NewWindow("Hello")
+
+	// method 1: opencv reRecgnizeFace and rectangle it
+	img := gocv.IMRead(imgPath, gocv.IMReadColor)
+	if img.Empty() {
+		fmt.Println("Error reading image from: %v", imgPath)
+		return
+	}
+
+	///////////////////////////////////////////////////////////////
+	// color for the rect when faces detected
+	//blue := color.RGBA{0, 0, 255, 0}
+	blue := color.RGBA{255, 0, 0, 2}
+	classifier := gocv.NewCascadeClassifier()
+	defer classifier.Close()
+
+	if !classifier.Load("data/haarcascade_frontalface_default.xml") {
+		fmt.Println("Error reading cascade file: data/haarcascade_frontalface_default.xml")
+		return
+	}
+	// detect faces
+	rects := classifier.DetectMultiScale(img)
+	fmt.Printf("found %d faces\n", len(rects))
+	// draw a rectangle around each face on the original image
+	for i, r := range rects {
+		gocv.Rectangle(&img, r, blue, 2)
+
+		//size := gocv.GetTextSize(name[i], gocv.FontHersheyPlain, 1.2, 2)
+		//pt := image.Pt(r.Min.X+(r.Min.X/2)-(size.X/2), r.Min.Y-2)
+		pt := image.Pt(r.Min.X, r.Min.Y-20)
+		gocv.PutText(&img, name[i], pt, gocv.FontHersheyPlain, 2, blue, 2)
+	}
+	/////////////////////////////////////////////////////////////////////
+
+	for {
+		window.IMShow(img)
+		if window.WaitKey(1) >= 0 {
+			break
+		}
+	}
+}
+
+func multiObjshowRectangleWithName(imgPath string,recfaces[] face.Face,name[] string) {
+	window := gocv.NewWindow("Hello")
+	
+	fmt.Println("mj test : multiObjshowRectangleWithName name = ", name,"\n")
+
+	// method 2 : use reced faces data before
+	img := gocv.IMRead(imgPath, gocv.IMReadColor)
+	if img.Empty() {
+		fmt.Println("Error reading image from: %v", imgPath)
+		return
+	}
+
+	blue := color.RGBA{255, 0, 0, 2}
+
+	for i, r := range recfaces {
+		gocv.Rectangle(&img, r.Rectangle, blue, 2)
+
+		//size := gocv.GetTextSize(name[i], gocv.FontHersheyPlain, 0.5, 2)
+		//pt := image.Pt(r.Rectangle.Min.X+(r.Rectangle.Min.X/2)-(size.X/2), r.Rectangle.Min.Y-20)
+		pt := image.Pt(r.Rectangle.Min.X, r.Rectangle.Min.Y-20)
+		gocv.PutText(&img, name[i], pt, gocv.FontHersheyPlain, 2, blue, 2)
+	}
+
+	for {
+		window.IMShow(img)
+		if window.WaitKey(1) >= 0 {
+			break
+		}
+	}
+}
+
+func main() {
+	fmt.Println("Facial Recognition System v0.01")
+
+	if len(os.Args) < 2 {
+		fmt.Println("How to run:\n\tgo run main.go 1/2/3(camera)\n")
+		return
+	}
+	choseId,_ := strconv.Atoi(os.Args[1])
+
+	// 1. init recognizer
+	rec, err := face.NewRecognizer(modelsDir)
+	if err != nil {
+		fmt.Println("Cannot initialize recognizer")
+	}
+	fmt.Println("Recognizer Initialized")
+	defer rec.Close()
+
+	// 2. set samples to the recognizer------1
+	/*
+	avengersImage := filepath.Join(dataDir, "avengers-02.jpeg")
+	faces , err := rec.RecognizeFile(avengersImage)
+	if err != nil {
+		log.Fatalf("Can't recognize: %v", err)
+	}
+	fmt.Println("Number of Faces in Image: ", len(faces))
+
+	var samples []face.Descriptor
+	var avengers []int32
+	for i, f := range faces {
+		samples = append(samples, f.Descriptor)
+		// Each face is unique on that image so goes to its own category.
+		avengers = append(avengers, int32(i))
+	}
+	// Name the categories, i.e. people on the image.
+	labels := []string{
+		"Dr Strange",
+		"Tony Stark",
+		"Bruce Banner",
+		"Wong",
+	}
+	// Pass samples to the recognizer.
+	rec.SetSamples(samples, avengers)
+	fmt.Println("Pass samples to the recognizer OK,LET'S start test.")
+	*/
+
+	// 2. set samples to the recognizer------2
+	var samples[] face.Descriptor
+	var avengers[] int32
+	var labels[] string
+	var count int32
+
+	// iterate src face images from given dir
+	faceImages, err := ioutil.ReadDir(dataDir)
+	CheckErr(err)
+	count = 0
+	for _, faceImageInfo := range faceImages {
+		//get a face in each image
+		faceImagePath := filepath.Join(dataDir, faceImageInfo.Name())
+		faces, err := rec.RecognizeFileCNN(faceImagePath)
+		if err != nil {
+			log.Fatalf("Can't recognize: %v", err)
+		}
+		if len(faces) > 1 {
+			fmt.Printf("Gets %d faces in %s, please keep one face in image.\n", len(faces), faceImagePath)
+			os.Exit(0)
+		}
+		//fmt.Println("Number of Faces in Image: ", len(faces),"and dir : ",faceImagePath)
+
+		// Each face's Descriptor
+		for _, f := range faces {
+			samples = append(samples, f.Descriptor)
+		}
+		// Each face is unique on this image, so goes to its own category.
+		avengers = append(avengers, int32(count))
+		// Name the categories, i.e. people on the image.
+		if strings.Contains(faceImageInfo.Name(), ".") {
+			Name := (faceImageInfo.Name())[0:strings.Index(faceImageInfo.Name(), ".")]
+			fmt.Println(Name)
+			labels = append(labels, Name)
+		}
+
+		count++
+	}
+
+	// Pass samples to the recognizer.
+	rec.SetSamples(samples, avengers)
+	fmt.Println("mj test : labels = ", labels,"\n")
+
+////////////////////////////////////////////////////////////////////////
+	// 3. Now let's try to classify some not yet known image.
+	//test 1 : single-objective in single picture
+	if choseId == 1{
+		fmt.Println("choseId == ", choseId)
+		singleObjImgPath := filepath.Join(testDir, "mj1.jpg")
+		//singleObjImgPath := filepath.Join(testDir, "ts.jpg")
+		//singleObjImgPath := filepath.Join(testDir, "tony-stark.jpg")
+		singleFace, err := rec.RecognizeSingleFileCNN(singleObjImgPath)
+		if err != nil {
+			log.Fatalf("Can't recognize: %v", err)
+		}
+		if singleFace == nil {
+			log.Fatalf("Not a single face on the image")
+			os.Exit(0)
+		}
+
+		var recName[] string
+		//singleFaceID := rec.Classify(singleFace.Descriptor)
+		singleFaceID := rec.ClassifyThreshold(singleFace.Descriptor, 0.35)
+		fmt.Println("mj retshld: ", singleFaceID)
+		if singleFaceID < 0 {
+			recName = append(recName, "unkown")
+			fmt.Printf("Can't classify : %v\n", recName)
+		} else {
+			recName = append(recName, labels[singleFaceID])
+			fmt.Printf("Classified : %v\n", recName)
+		}
+		// 4. Rectangle faces and relate name
+		singleObjShowRectangleWithName(singleObjImgPath, recName)
+	}
+////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////
+
+	//test 2 : multi-objective in single picture
+   if choseId == 2{
+	   	fmt.Println("choseId == ", choseId)
+		multiObjImgPath := filepath.Join(testDir, "avengers-02.jpeg")
+		//multiObjImgPath := filepath.Join(testDir, "lindan_chenlong.jpg")
+		faces, err := rec.RecognizeFileCNN(multiObjImgPath)
+		if err != nil {
+			log.Fatalf("Can't recognize: %v", err)
+		}
+		if faces == nil {
+			log.Fatalf("No faces on the image")
+		}
+		fmt.Println("Number of Faces in Image: ", len(faces))
+
+		// rec each face in img
+		var recMultiName[] string
+		for _, f := range faces {
+			//faceID := rec.Classify(f.Descriptor)
+			faceID :=rec.ClassifyThreshold(f.Descriptor,0.35)
+			fmt.Println("mj retshld: ",faceID)
+			if faceID < 0 {
+				//recMultiName[i] = "unkown"
+				//fmt.Printf("Can't classify : %s\n",recName)
+				recMultiName = append(recMultiName, "unkown")
+			}else {
+				//recMultiName[i] = labels[faceID]
+				//fmt.Printf("Classified : %s\n",recName)
+				recMultiName = append(recMultiName, labels[faceID])
+			}
+		}
+	   fmt.Println("mj test : recMultiName = ", recMultiName,"\n")
+		// 4. Rectangle faces and relate name
+		multiObjshowRectangleWithName(multiObjImgPath,faces,recMultiName)
+		//singleObjShowRectangleWithName(multiObjImgPath, recMultiName)
+	}
+////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////
+
+	//test 3 : Rec&Show multi-objective from camera stream
+	if choseId == 3{
+		fmt.Println("choseId == ", choseId)
+		cameraMultiObjShowRecFacesWithName(rec,labels)
+	}
+////////////////////////////////////////////////////////////////////////
+}
+
+func cameraMultiObjShowRecFacesWithName(rec *face.Recognizer,labels[] string){
+	// set to use a video capture device 0
+	//deviceID := 0
+	//deviceID := "rtmp://192.168.43.74:1935/live/movie"
+	deviceID := "rtsp://192.168.0.10/live/live0"
+
+	// open webcam : OpenVideoCapture("2.mp4")/OpenVideoCapture("rtsp://192.168.1.123:1935/live/show/")
+	webcam, err := gocv.OpenVideoCapture(deviceID)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer webcam.Close()
+	fmt.Println("open cam ok")
+
+	// open display window
+	window := gocv.NewWindow("Face Detect")
+	defer window.Close()
+	fmt.Println("NewWindow ok")
+
+	// prepare image matrix
+	img := gocv.NewMat()
+	defer img.Close()
+
+	// color for the rect when faces detected
+	blue := color.RGBA{0, 0, 255, 0}
+
+	//for ffmpeg push to rtmp server
+	cmdargs := "ffmpeg -y -an -f rawvideo" +
+		" -vcodec rawvideo -pix_fmt bgr24" +
+		" -s 1280x720 -r 25 -i - -c:v libx264" +
+		" -pix_fmt yuv420p -preset ultrafast -f flv" +
+		" rtmp://192.168.0.30:1935/live/movie"
+	list := strings.Split(cmdargs, " ")
+	cmd := exec.Command(list[0], list[1:]...)
+	cmdIn, err := cmd.StdinPipe()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer cmdIn.Close()
+	if err := cmd.Start(); err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("start reading camera device: %v\n", deviceID)
+	cameraTmpImgPath := filepath.Join(testDir, "cameratmptest.jpg")
+	for {
+		// read a frame
+		if ok := webcam.Read(&img); !ok {
+			fmt.Printf("cannot read device %v\n", deviceID)
+			return
+		}
+		if img.Empty() {
+			continue
+		}
+		fmt.Println("read frame ok")
+
+		// get each face's name from lables[]
+		///////////////////////////////////////////////////////////////////////////////
+		gocv.IMWrite(cameraTmpImgPath,img)
+		faces, err := rec.RecognizeFileCNN(cameraTmpImgPath)
+		if err != nil {
+			//log.Fatalf("Can't recognize: %v", err)
+			fmt.Printf("Can't recognize...")
+		}
+		if faces == nil {
+			//log.Fatalf("No faces on the image")
+			fmt.Printf("No faces on the image")
+		}
+		fmt.Println("Number of Faces in Image: ", len(faces))
+
+		// rec each face in img
+		var recCamMultiName[30] string
+		for i, f := range faces {
+			faceID :=rec.ClassifyThreshold(f.Descriptor,0.35)
+			fmt.Println("mj retshld: ",faceID)
+			if faceID < 0 {
+				recCamMultiName[i] = "unkown"
+				//fmt.Printf("Can't classify : %s\n",recName)
+			}else {
+				recCamMultiName[i] = labels[faceID]
+				//fmt.Printf("Classified : %s\n",recName)
+			}
+		}
+		///////////////////////////////////////////////////////////////////////////////
+
+		// set name and rectangle on img
+		///////////////////////////////////////////////////////////////////////////////
+		// draw a rectangle around each face on the original image
+		for i, r := range faces {
+			gocv.Rectangle(&img, r.Rectangle, blue, 2)
+
+			//size := gocv.GetTextSize(recCamMultiName[i], gocv.FontHersheyPlain, 1.2, 2)
+			//pt := image.Pt(r.Rectangle.Min.X+(r.Rectangle.Min.X/2)-(size.X/2), r.Rectangle.Min.Y-2)
+			pt := image.Pt(r.Rectangle.Min.X, r.Rectangle.Min.Y-20)
+			gocv.PutText(&img, recCamMultiName[i], pt, gocv.FontHersheyPlain, 2, blue, 2)
+		}
+		///////////////////////////////////////////////////////////////////////////////
+
+		// show the image in the window, and wait 1 millisecond
+		window.IMShow(img)
+		window.WaitKey(1)
+
+		//push to rtmp server by ffmpeg
+		///////////////////////////////////////////////////////////////////////////////
+		//push to rtmp server
+		cnt,err :=cmdIn.Write([]byte(img.ToBytes()))
+		//cnt,err :=cmdIn.Write(img.ToBytes())
+		if err !=nil {
+			fmt.Printf("%v",err)
+			os.Exit(0)
+		}else{
+			fmt.Printf("send cnt=%d\n",cnt)
+		}
+		///////////////////////////////////////////////////////////////////////////////
+	}
+}

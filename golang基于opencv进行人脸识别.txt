@@ -1,0 +1,63 @@
+一、Ubuntu 18.04安装OpenCV4.1.1和环境配置:
+	1 安装前准备
+		1.1 安装依赖
+			sudo apt-get install build-essential
+			sudo apt-get install cmake git libgtk2.0-dev pkg-config libavcodec-dev libavformat-dev libswscale-dev
+			sudo apt-get install python-dev python-numpy libtbb2 libtbb-dev libjpeg-dev libpng-dev libtiff-dev libdc1394-22-dev 	# 处理图像所需的包
+			sudo apt-get install libavcodec-dev libavformat-dev libswscale-dev libv4l-dev liblapacke-dev
+			sudo apt-get install libx264-dev libxvidcore-dev	# 处理视频所需的包
+			sudo apt-get install libatlas-base-dev gfortran 	# 优化opencv功能
+			sudo apt-get install ffmpeg
+			
+			安装失败libjasper-dev：
+				E: Unable to locate package libjasper-dev
+			解决办法：
+				sudo add-apt-repository "deb http://security.ubuntu.com/ubuntu xenial-security main"
+				sudo apt update
+				sudo apt install libjasper1 libjasper-dev
+			
+		1.2 下载源文件
+			opencv-4.1.1.zip
+	2 安装过程
+		unzip opencv-4.1.1.zip
+		cd opencv-4.1.1/
+		mkdir build
+		cd build/
+		sudo mkdir -p /usr/local/opencv4
+		cmake -D CMAKE_BUILD_TYPE=Release -D OPENCV_GENERATE_PKGCONFIG=YES -D CMAKE_INSTALL_PREFIX=/usr/local/opencv4 ..
+		make -j8
+		sudo make install
+		
+	3 OpenCV配置环境
+		3.1 pkg-config环境
+			3.1.1 sudo vim /etc/profile
+				添加如下内容：
+					export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/usr/local/lib/pkgconfig:/usr/local/opencv4/lib/pkgconfig
+				source /etc/profile
+			3.1.2 验证是否配置成功：
+				pkg-config --libs opencv4
+		3.2 配置OpenCV编译环境,添加加载动态库so库的路径:
+			3.2.1 sudo vim /etc/ld.so.conf.d/opencv4.conf
+				该文件（可能是空文件）末尾加上：
+					/usr/local/opencv4/lib
+			3.2.2 使刚才配置的路径生效:
+				sudo ldconfig
+	4 清理安装
+		rm -rf build
+
+二、两套go-opencv方法的使用：
+	2.1 go-opencv包：(旧版本，不支持Opencv 3+)
+		https://github.com/go-opencv/go-opencv
+		2.1.1 安装go-opencv:
+			go get github.com/go-opencv/go-opencv
+	2.2 gocv.io/x/gocv包：(新版本，支持Opencv 3+)
+		https://github.com/hybridgroup/gocv
+		2.2.1 安装gocv:
+			go get -u gocv.io/x/gocv
+		2.2.2 使用gocv:
+			cd go-face-recognition-opencv
+			读取图片,框出人脸,显示：
+				go run goShowImage.go mj.jpg
+			读取摄像头流，框出人脸，实时显示：
+				go run goCameraShow.go
+	
