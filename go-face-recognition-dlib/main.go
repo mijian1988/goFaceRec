@@ -437,6 +437,7 @@ func getFrameFromCameraToQueue(fQueue *queue.Queue,wArgsChan chan<- string) {
 	webCam, err := gocv.OpenVideoCapture(deviceID)
 	if err != nil {
 		fmt.Println(err)
+		wg.Done()
 		return
 	}
 	defer webCam.Close()
@@ -474,7 +475,7 @@ func getFrameFromCameraToQueue(fQueue *queue.Queue,wArgsChan chan<- string) {
 			if img.Empty() {
 				continue
 			}
-			fmt.Println("read frame ok")
+			//fmt.Println("read frame ok")
 
 			// resize 320*240
 			//gocv.Resize(img,&dstImg,dstImg,320,240,gocv.InterpolationCubic)
@@ -498,6 +499,7 @@ func recFaceAndMarkName(fQueue *queue.Queue,rQueue *queue.Queue,rec *face.Recogn
 	// color for the rect when faces detected
 	blue := color.RGBA{0, 0, 255, 0}
 	var recCamMultiName[30] string
+	cameraTmpImgPath := filepath.Join(testDir, "cameratmptest.jpg")
 
 	for {
 		if fQueue.Length() > 0 {
@@ -511,14 +513,16 @@ func recFaceAndMarkName(fQueue *queue.Queue,rQueue *queue.Queue,rec *face.Recogn
 
 			// get each face's name from lables[]
 			///////////////////////////////////////////////////////////////////////////////
-			faces, err := rec.RecognizeCNN([]byte(img.ToBytes()))
+			gocv.IMWrite(cameraTmpImgPath,img)
+			faces, err := rec.RecognizeFileCNN(cameraTmpImgPath)
+			//faces, err := rec.RecognizeCNN([]byte(img.ToBytes()))
 			if err != nil {
-				fmt.Printf("Can't recognize...")
+				fmt.Printf("Can't recognize...\n")
 			}
 			if faces == nil {
-				fmt.Printf("No faces on the image")
+				fmt.Printf("No faces on the image\n")
 			}
-			fmt.Println("Number of Faces in Image: ", len(faces))
+			fmt.Println("Number of Faces in Image: \n", len(faces))
 
 			// rec each face in img
 			for i, f := range faces {
@@ -590,12 +594,10 @@ func pushToRtmpFromRecedQueue(recedQueue *queue.Queue,rArgsChan <-chan string){
 			window.WaitKey(1)
 
 			//push to rtmp server
-			cnt, err := cmdIn.Write([]byte(img.ToBytes()))
+			_, err := cmdIn.Write([]byte(img.ToBytes()))
 			if err != nil {
 				fmt.Printf("%v", err)
 				break
-			} else {
-				fmt.Printf("send cnt=%d\n", cnt)
 			}
 		}
 	}
