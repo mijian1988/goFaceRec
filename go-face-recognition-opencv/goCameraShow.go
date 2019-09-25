@@ -137,6 +137,7 @@ func getFrameFromCamera(queue *queue.Queue,wArgsChan chan<- string) {
 	webCam, err := gocv.OpenVideoCapture(deviceID)
 	if err != nil {
 		fmt.Println(err)
+		wg.Done()
 		return
 	}
 	defer webCam.Close()
