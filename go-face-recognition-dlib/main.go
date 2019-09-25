@@ -448,7 +448,7 @@ func getFrameFromCameraToQueue(fQueue *queue.Queue,wArgsChan chan<- string) {
 	defer img.Close()
 
 	// for ffmpeg push to rtmp server
-	// get webCam ops:width/height/fpss
+	// get webCam ops:width/height/fps
 	width := int(webCam.Get(gocv.VideoCaptureFrameWidth))
 	height := int(webCam.Get(gocv.VideoCaptureFrameHeight))
 	fps := int(webCam.Get(gocv.VideoCaptureFPS))
@@ -470,7 +470,8 @@ func getFrameFromCameraToQueue(fQueue *queue.Queue,wArgsChan chan<- string) {
 			// read frame from cam
 			if ok := webCam.Read(&img); !ok {
 				fmt.Printf("cannot read device %v\n", deviceID)
-				break
+				//break
+				continue
 			}
 			if img.Empty() {
 				continue
@@ -572,10 +573,12 @@ func pushToRtmpFromRecedQueue(recedQueue *queue.Queue,rArgsChan <-chan string){
 	cmd := exec.Command(list[0], list[1:]...)
 	cmdIn, err := cmd.StdinPipe()
 	if err != nil {
+		wg.Done()
 		log.Fatal(err)
 	}
 	defer cmdIn.Close()
 	if err := cmd.Start(); err != nil {
+		wg.Done()
 		log.Fatal(err)
 	}
 
@@ -597,7 +600,8 @@ func pushToRtmpFromRecedQueue(recedQueue *queue.Queue,rArgsChan <-chan string){
 			_, err := cmdIn.Write([]byte(img.ToBytes()))
 			if err != nil {
 				fmt.Printf("%v", err)
-				break
+				//break
+				continue
 			}
 		}
 	}
