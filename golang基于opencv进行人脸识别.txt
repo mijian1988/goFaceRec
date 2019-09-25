@@ -60,4 +60,26 @@
 				go run goShowImage.go mj.jpg
 			读取摄像头流，框出人脸，实时显示：
 				go run goCameraShow.go
+				
+	2.3 错误解决：
+		2.3.1 opencv读取rtsp流时出错：
+			错误提示：
+				[rtsp @ 0x208f7a0] Unhandled type (29) (See RFC for implementation details)
+				[h264 @ 0x20b6a80] top block unavailable for requested intra mode at 36 0
+				[h264 @ 0x20b6a80] error while decoding MB 36 0, bytestream 1079
+				[h264 @ 0x20b6a80] non-existing PPS 4 referenced
+				[h264 @ 0x20b6a80] decode_slice_header error
+				[rtsp @ 0x208f7a0] nal size exceeds length: 9895 1425
+				[rtsp @ 0x208f7a0] Undefined type (31)
+				[h264 @ 0x20aa120] missing picture in access unit with size 2858
+				[h264 @ 0x20a5720] no frame!
+				[h264 @ 0x20ad540] cabac decode of qscale diff failed at 101 51
+				[h264 @ 0x20ad540] error while decoding MB 101 51, bytestream 77
+				[h264 @ 0x2206b20] cabac decode of qscale diff failed at 84 60
+				[h264 @ 0x2206b20] error while decoding MB 84 60, bytestream 493
+				[h264 @ 0x20a5720] error while decoding MB 24 59, bytestream -19
+				cannot read device rtsp://admin:cmiot123@192.168.0.100/
+			解决：
+				将读帧和识别分为两个routine来执行;不再同一个routine里执行！
+			
 	
