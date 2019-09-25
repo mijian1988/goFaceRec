@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/Kagami/go-face"
 	"gocv.io/x/gocv"
+	"gopkg.in/eapache/queue.v1"
 	"image"
 	"image/color"
 	"io/ioutil"
@@ -13,6 +14,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 const dataDir = "images"
@@ -266,12 +269,17 @@ func main() {
 	//test 3 : Rec&Show multi-objective from camera stream
 	if choseId == 3{
 		fmt.Println("choseId == ", choseId)
-		cameraMultiObjShowRecFacesWithName(rec,labels)
+		// method 1	: capture frmae,rec frame,push frmae with one routine
+		//cameraMultiObjShowRecFacesWithName1(rec,labels)
+
+		// method 2 : capture frmae,rec frame,push frmae with independent routine
+		cameraMultiObjShowRecFacesWithName2(rec,labels)
 	}
 ////////////////////////////////////////////////////////////////////////
 }
 
-func cameraMultiObjShowRecFacesWithName(rec *face.Recognizer,labels[] string){
+/*
+func cameraMultiObjShowRecFacesWithName1(rec *face.Recognizer,labels[] string){
 	// set to use a video capture device 0
 	//deviceID := 0
 	//deviceID := "rtmp://192.168.43.74:1935/live/movie"
@@ -299,12 +307,19 @@ func cameraMultiObjShowRecFacesWithName(rec *face.Recognizer,labels[] string){
 	blue := color.RGBA{0, 0, 255, 0}
 
 	//for ffmpeg push to rtmp server
-	cmdargs := "ffmpeg -y -an -f rawvideo" +
-		" -vcodec rawvideo -pix_fmt bgr24" +
-		" -s 1280x720 -r 25 -i - -c:v libx264" +
-		" -pix_fmt yuv420p -preset ultrafast -f flv" +
-		" rtmp://192.168.0.30:1935/live/movie"
-	list := strings.Split(cmdargs, " ")
+	width := int(webcam.Get(gocv.VideoCaptureFrameWidth))
+	height := int(webcam.Get(gocv.VideoCaptureFrameHeight))
+	fps := int(webcam.Get(gocv.VideoCaptureFPS))
+
+	cmdArgs :=fmt.Sprintf("%s %s %s %d %s %s",
+		"ffmpeg -y -an -f rawvideo -vcodec rawvideo -pix_fmt bgr24 -s",
+		fmt.Sprintf("%dx%d", width, height),
+		"-r",
+		fps,
+		"-i - -c:v libx264 -pix_fmt yuv420p -preset ultrafast -f flv",
+		"rtmp://192.168.0.30:1935/live/movie",
+	)
+	list := strings.Split(cmdArgs, " ")
 	cmd := exec.Command(list[0], list[1:]...)
 	cmdIn, err := cmd.StdinPipe()
 	if err != nil {
@@ -374,9 +389,9 @@ func cameraMultiObjShowRecFacesWithName(rec *face.Recognizer,labels[] string){
 		window.IMShow(img)
 		window.WaitKey(1)
 
-		//push to rtmp server by ffmpeg
+		// push to rtmp server by ffmpeg
 		///////////////////////////////////////////////////////////////////////////////
-		//push to rtmp server
+		// push to rtmp server
 		cnt,err :=cmdIn.Write([]byte(img.ToBytes()))
 		//cnt,err :=cmdIn.Write(img.ToBytes())
 		if err !=nil {
@@ -387,4 +402,203 @@ func cameraMultiObjShowRecFacesWithName(rec *face.Recognizer,labels[] string){
 		}
 		///////////////////////////////////////////////////////////////////////////////
 	}
+}*/
+
+var wg sync.WaitGroup
+func cameraMultiObjShowRecFacesWithName2(rec *face.Recognizer,labels[] string){
+	frameQueue := queue.New()// queue for frame from camera
+	recedQueue := queue.New()// queue for frame from frameQueue,using for recedframe
+	argsChan := make(chan string)
+
+	// get frame from camera to frameQueue for rec,argsChan for ffmpeg push
+	go getFrameFromCameraToQueue(frameQueue,argsChan)
+	wg.Add(1)
+	time.Sleep(1)
+
+	// get frame from frameQueue to rec,then store it in recedQueue for pushing to rtmp server
+	go recFaceAndMarkName(frameQueue,recedQueue,rec,labels)
+	wg.Add(1)
+	time.Sleep(1)
+
+	// get frame from recedQueue to push with ffmpeg
+	go pushToRtmpFromRecedQueue(recedQueue,argsChan)
+	wg.Add(1)
+
+	wg.Wait()
+	fmt.Println("main exit...")
+}
+
+func getFrameFromCameraToQueue(fQueue *queue.Queue,wArgsChan chan<- string) {
+	// set src
+	deviceID := 0
+	//deviceID := "rtsp://admin:cmiot123@192.168.0.100/"
+
+	// open webCam
+	webCam, err := gocv.OpenVideoCapture(deviceID)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer webCam.Close()
+	fmt.Println("open cam ok")
+
+	// prepare image matrix
+	img := gocv.NewMat()
+	defer img.Close()
+
+	// for ffmpeg push to rtmp server
+	// get webCam ops:width/height/fpss
+	width := int(webCam.Get(gocv.VideoCaptureFrameWidth))
+	height := int(webCam.Get(gocv.VideoCaptureFrameHeight))
+	fps := int(webCam.Get(gocv.VideoCaptureFPS))
+
+	cmdArgs :=fmt.Sprintf("%s %s %s %d %s %s",
+		"ffmpeg -y -an -f rawvideo -vcodec rawvideo -pix_fmt bgr24 -s",
+		fmt.Sprintf("%dx%d", width, height),
+		"-r",
+		fps,
+		"-i - -c:v libx264 -pix_fmt yuv420p -preset ultrafast -f flv",
+		"rtmp://192.168.0.30:1935/live/movie",
+	)
+	//fmt.Printf("cmdargs:%s\n",cmdArgs)
+	wArgsChan <-cmdArgs
+	fmt.Printf("send cmdargs to push routine ok\n")
+
+	for {
+		if webCam.IsOpened() {
+			// read frame from cam
+			if ok := webCam.Read(&img); !ok {
+				fmt.Printf("cannot read device %v\n", deviceID)
+				break
+			}
+			if img.Empty() {
+				continue
+			}
+			fmt.Println("read frame ok")
+
+			// resize 320*240
+			//gocv.Resize(img,&dstImg,dstImg,320,240,gocv.InterpolationCubic)
+
+			// put frame into fqueue
+			fQueue.Add(img)
+		} else {
+			fmt.Println("camera has been closed!")
+			break
+		}
+	}
+
+	wg.Done()
+}
+
+func recFaceAndMarkName(fQueue *queue.Queue,rQueue *queue.Queue,rec *face.Recognizer,labels[] string){
+	// prepare image matrix
+	img := gocv.NewMat()
+	defer img.Close()
+
+	// color for the rect when faces detected
+	blue := color.RGBA{0, 0, 255, 0}
+	var recCamMultiName[30] string
+
+	for {
+		if fQueue.Length() > 0 {
+			queueImg := fQueue.Get(0)
+			switch qImg := queueImg.(type) {
+				case gocv.Mat:
+					img = qImg
+				default:
+					continue
+			}
+
+			// get each face's name from lables[]
+			///////////////////////////////////////////////////////////////////////////////
+			faces, err := rec.RecognizeCNN([]byte(img.ToBytes()))
+			if err != nil {
+				fmt.Printf("Can't recognize...")
+			}
+			if faces == nil {
+				fmt.Printf("No faces on the image")
+			}
+			fmt.Println("Number of Faces in Image: ", len(faces))
+
+			// rec each face in img
+			for i, f := range faces {
+				faceID :=rec.ClassifyThreshold(f.Descriptor,0.35)
+				if faceID < 0 {
+					recCamMultiName[i] = "unkown"
+				}else {
+					recCamMultiName[i] = labels[faceID]
+				}
+			}
+			///////////////////////////////////////////////////////////////////////////////
+
+			// set name and rectangle on img
+			///////////////////////////////////////////////////////////////////////////////
+			// draw a rectangle around each face on the original image
+			for i, r := range faces {
+				gocv.Rectangle(&img, r.Rectangle, blue, 2)
+
+				//size := gocv.GetTextSize(recCamMultiName[i], gocv.FontHersheyPlain, 1.2, 2)
+				//pt := image.Pt(r.Rectangle.Min.X+(r.Rectangle.Min.X/2)-(size.X/2), r.Rectangle.Min.Y-2)
+				pt := image.Pt(r.Rectangle.Min.X, r.Rectangle.Min.Y-20)
+				gocv.PutText(&img, recCamMultiName[i], pt, gocv.FontHersheyPlain, 2, blue, 2)
+			}
+			///////////////////////////////////////////////////////////////////////////////
+
+			// put frame into rQueue
+			rQueue.Add(img)
+		}
+	}
+
+	wg.Done()
+}
+
+func pushToRtmpFromRecedQueue(recedQueue *queue.Queue,rArgsChan <-chan string){
+	// prepare image matrix
+	img := gocv.NewMat()
+	defer img.Close()
+
+	// open display window
+	window := gocv.NewWindow("Face Detect")
+	defer window.Close()
+	fmt.Println("NewWindow ok")
+
+	//for ffmpeg push to rtmp server
+	cmdArgs := <-rArgsChan
+	list := strings.Split(cmdArgs, " ")
+	cmd := exec.Command(list[0], list[1:]...)
+	cmdIn, err := cmd.StdinPipe()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer cmdIn.Close()
+	if err := cmd.Start(); err != nil {
+		log.Fatal(err)
+	}
+
+	for {
+		if recedQueue.Length() > 0 {
+			queueImg := recedQueue.Get(0)
+			switch qImg := queueImg.(type) {
+				case gocv.Mat:
+					img = qImg
+				default:
+					continue
+			}
+
+			// show the image in the window, and wait 1 millisecond
+			window.IMShow(img)
+			window.WaitKey(1)
+
+			//push to rtmp server
+			cnt, err := cmdIn.Write([]byte(img.ToBytes()))
+			if err != nil {
+				fmt.Printf("%v", err)
+				break
+			} else {
+				fmt.Printf("send cnt=%d\n", cnt)
+			}
+		}
+	}
+
+	wg.Done()
 }
