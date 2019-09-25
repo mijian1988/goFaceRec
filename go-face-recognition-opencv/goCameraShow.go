@@ -170,12 +170,13 @@ func getFrameFromCamera(queue *queue.Queue,wArgsChan chan<- string) {
 			// read frame from cam
 			if ok := webCam.Read(&img); !ok {
 				fmt.Printf("cannot read device %v\n", deviceID)
-				break
+				//break
+				continue
 			}
 			if img.Empty() {
 				continue
 			}
-			fmt.Println("read frame ok")
+			//fmt.Println("read frame ok")
 
 			// resize 320*240
 			//gocv.Resize(img,&dstImg,dstImg,320,240,gocv.InterpolationCubic)
@@ -210,6 +211,7 @@ func recFaceAndPushToRtmp(queue *queue.Queue,rArgsChan <-chan string) {
 
 	if !classifier.Load("data/haarcascade_frontalface_default.xml") {
 		fmt.Println("Error reading cascade file: data/haarcascade_frontalface_default.xml")
+		wg.Done()
 		return
 	}
 
@@ -219,10 +221,12 @@ func recFaceAndPushToRtmp(queue *queue.Queue,rArgsChan <-chan string) {
 	cmd := exec.Command(list[0], list[1:]...)
 	cmdIn, err := cmd.StdinPipe()
 	if err != nil {
+		wg.Done()
 		log.Fatal(err)
 	}
 	defer cmdIn.Close()
 	if err := cmd.Start(); err != nil {
+		wg.Done()
 		log.Fatal(err)
 	}
 
@@ -250,12 +254,11 @@ func recFaceAndPushToRtmp(queue *queue.Queue,rArgsChan <-chan string) {
 			window.WaitKey(1)
 
 			//push to rtmp server
-			cnt, err := cmdIn.Write([]byte(img.ToBytes()))
+			_, err := cmdIn.Write([]byte(img.ToBytes()))
 			if err != nil {
 				fmt.Printf("%v", err)
-				break
-			} else {
-				fmt.Printf("send cnt=%d\n", cnt)
+				//break
+				continue
 			}
 		}
 	}
