@@ -430,8 +430,8 @@ func cameraMultiObjShowRecFacesWithName2(rec *face.Recognizer,labels[] string){
 
 func getFrameFromCameraToQueue(fQueue *queue.Queue,wArgsChan chan<- string) {
 	// set src
-	deviceID := 0
-	//deviceID := "rtsp://admin:cmiot123@192.168.0.100/"
+	//deviceID := 0
+	deviceID := "rtsp://admin:cmiot123@192.168.0.100/"
 
 	// open webCam
 	webCam, err := gocv.OpenVideoCapture(deviceID)
@@ -459,7 +459,7 @@ func getFrameFromCameraToQueue(fQueue *queue.Queue,wArgsChan chan<- string) {
 		"-r",
 		fps,
 		"-i - -c:v libx264 -pix_fmt yuv420p -preset ultrafast -f flv",
-		"rtmp://192.168.0.30:1935/live/movie",
+		"rtmp://192.168.0.173:1935/live/movie",
 	)
 	//fmt.Printf("cmdargs:%s\n",cmdArgs)
 	wArgsChan <-cmdArgs
@@ -563,9 +563,9 @@ func pushToRtmpFromRecedQueue(recedQueue *queue.Queue,rArgsChan <-chan string){
 	defer img.Close()
 
 	// open display window
-	window := gocv.NewWindow("Face Detect")
-	defer window.Close()
-	fmt.Println("NewWindow ok")
+	//window := gocv.NewWindow("Face Detect")
+	//defer window.Close()
+	//fmt.Println("NewWindow ok")
 
 	//for ffmpeg push to rtmp server
 	cmdArgs := <-rArgsChan
@@ -593,8 +593,8 @@ func pushToRtmpFromRecedQueue(recedQueue *queue.Queue,rArgsChan <-chan string){
 			}
 
 			// show the image in the window, and wait 1 millisecond
-			window.IMShow(img)
-			window.WaitKey(1)
+			//window.IMShow(img)
+			//window.WaitKey(1)
 
 			//push to rtmp server
 			_, err := cmdIn.Write([]byte(img.ToBytes()))

@@ -80,6 +80,8 @@
 				[h264 @ 0x20a5720] error while decoding MB 24 59, bytestream -19
 				cannot read device rtsp://admin:cmiot123@192.168.0.100/
 			解决：
-				将读帧和识别分为两个routine来执行;不再同一个routine里执行！
+				将读帧和识别分为两个routine来执行;不再同一个routine里执行,见goCameraShow.go！
+		
+				
 			
 	
