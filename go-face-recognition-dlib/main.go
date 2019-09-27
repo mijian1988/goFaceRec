@@ -431,7 +431,7 @@ func cameraMultiObjShowRecFacesWithName2(rec *face.Recognizer,labels[] string){
 func getFrameFromCameraToQueue(fQueue *queue.Queue,wArgsChan chan<- string) {
 	// set src
 	//deviceID := 0
-	deviceID := "rtsp://admin:cmiot123@192.168.0.100/"
+	deviceID := "rtsp://1234abcd@192.168.0.100/"
 
 	// open webCam
 	webCam, err := gocv.OpenVideoCapture(deviceID)
