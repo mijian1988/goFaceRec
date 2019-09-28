@@ -405,38 +405,45 @@ func cameraMultiObjShowRecFacesWithName1(rec *face.Recognizer,labels[] string){
 }*/
 
 var wg sync.WaitGroup
+const stopGetFrame int = 1
+const stopRecFrame int = 2
+const stopPushFrame int = 3
 func cameraMultiObjShowRecFacesWithName2(rec *face.Recognizer,labels[] string){
 	frameQueue := queue.New()// queue for frame from camera
 	recedQueue := queue.New()// queue for frame from frameQueue,using for recedframe
-	argsChan := make(chan string)
+	quiteChan := make(chan int,2)// quite channel for sync 3 routines
+	argsChan := make(chan string) // args channel for send ffmpeg args
 
 	// get frame from camera to frameQueue for rec,argsChan for ffmpeg push
-	go getFrameFromCameraToQueue(frameQueue,argsChan)
+	go getFrameFromCameraToQueue(frameQueue,argsChan,quiteChan)
 	wg.Add(1)
 	time.Sleep(1)
 
 	// get frame from frameQueue to rec,then store it in recedQueue for pushing to rtmp server
-	go recFaceAndMarkName(frameQueue,recedQueue,rec,labels)
+	go recFaceAndMarkName(frameQueue,recedQueue,quiteChan,rec,labels)
 	wg.Add(1)
 	time.Sleep(1)
 
 	// get frame from recedQueue to push with ffmpeg
-	go pushToRtmpFromRecedQueue(recedQueue,argsChan)
+	go pushToRtmpFromRecedQueue(recedQueue,argsChan,quiteChan)
 	wg.Add(1)
 
 	wg.Wait()
 	fmt.Println("main exit...")
 }
 
-func getFrameFromCameraToQueue(fQueue *queue.Queue,wArgsChan chan<- string) {
+func getFrameFromCameraToQueue(fQueue *queue.Queue,wArgsChan chan<- string,quiteChan chan int) {
 	// set src
 	//deviceID := 0
-	deviceID := "rtsp://admin:1234abcd@192.168.0.100/"
+	//deviceID := "rtmp://58.200.131.2:1935/livetv/hunantv"
+	deviceID := "rtmp://192.168.0.30:1935/live/movie"
 
 	// open webCam
 	webCam, err := gocv.OpenVideoCapture(deviceID)
 	if err != nil {
 		fmt.Println(err)
+		quiteChan<-stopGetFrame
+		quiteChan<-stopGetFrame
 		wg.Done()
 		return
 	}
@@ -459,19 +466,34 @@ func getFrameFromCameraToQueue(fQueue *queue.Queue,wArgsChan chan<- string) {
 		"-r",
 		fps,
 		"-i - -c:v libx264 -pix_fmt yuv420p -preset ultrafast -f flv",
-		"rtmp://192.168.0.173:1935/live/movie",
+		"rtmp://192.168.0.193:1935/live/movie",
 	)
 	//fmt.Printf("cmdargs:%s\n",cmdArgs)
 	wArgsChan <-cmdArgs
 	fmt.Printf("send cmdargs to push routine ok\n")
 
-	for {
+loopGetFrame: for {
+		// select for listenning quite msg from rec/push frame routine
+		select {
+		case qMsg := <-quiteChan:
+			if qMsg == 2{
+				fmt.Printf(" quite msg from rec frame routine.")
+				break loopGetFrame
+			}else if qMsg == 3{
+				fmt.Printf(" quite msg from push frame routine.")
+				break loopGetFrame
+			}
+		case <-time.After(3 * time.Millisecond):
+			// wait 3 ms, do nothing while timeout
+		}
+
 		if webCam.IsOpened() {
 			// read frame from cam
 			if ok := webCam.Read(&img); !ok {
 				fmt.Printf("cannot read device %v\n", deviceID)
-				//break
-				continue
+				quiteChan<-stopGetFrame
+				quiteChan<-stopGetFrame
+				break
 			}
 			if img.Empty() {
 				continue
@@ -485,6 +507,8 @@ func getFrameFromCameraToQueue(fQueue *queue.Queue,wArgsChan chan<- string) {
 			fQueue.Add(img)
 		} else {
 			fmt.Println("camera has been closed!")
+			quiteChan<-stopGetFrame
+			quiteChan<-stopGetFrame
 			break
 		}
 	}
@@ -492,7 +516,7 @@ func getFrameFromCameraToQueue(fQueue *queue.Queue,wArgsChan chan<- string) {
 	wg.Done()
 }
 
-func recFaceAndMarkName(fQueue *queue.Queue,rQueue *queue.Queue,rec *face.Recognizer,labels[] string){
+func recFaceAndMarkName(fQueue *queue.Queue,rQueue *queue.Queue,quiteChan chan int,rec *face.Recognizer,labels[] string){
 	// prepare image matrix
 	img := gocv.NewMat()
 	defer img.Close()
@@ -502,7 +526,21 @@ func recFaceAndMarkName(fQueue *queue.Queue,rQueue *queue.Queue,rec *face.Recogn
 	var recCamMultiName[30] string
 	cameraTmpImgPath := filepath.Join(testDir, "cameratmptest.jpg")
 
-	for {
+loopRecFrame: for {
+		// select for listenning quite msg from get/push frame routine
+		select {
+		case qMsg := <-quiteChan:
+			if qMsg == 1{
+				fmt.Printf(" quite msg from get frame routine.")
+				break loopRecFrame
+			}else if qMsg == 3{
+				fmt.Printf(" quite msg from push frame routine.")
+				break loopRecFrame
+			}
+		case <-time.After(3 * time.Millisecond):
+			// wait 3 ms, do nothing while timeout
+		}
+
 		if fQueue.Length() > 0 {
 			queueImg := fQueue.Get(0)
 			switch qImg := queueImg.(type) {
@@ -557,7 +595,7 @@ func recFaceAndMarkName(fQueue *queue.Queue,rQueue *queue.Queue,rec *face.Recogn
 	wg.Done()
 }
 
-func pushToRtmpFromRecedQueue(recedQueue *queue.Queue,rArgsChan <-chan string){
+func pushToRtmpFromRecedQueue(recedQueue *queue.Queue,rArgsChan <-chan string,quiteChan chan int){
 	// prepare image matrix
 	img := gocv.NewMat()
 	defer img.Close()
@@ -573,16 +611,36 @@ func pushToRtmpFromRecedQueue(recedQueue *queue.Queue,rArgsChan <-chan string){
 	cmd := exec.Command(list[0], list[1:]...)
 	cmdIn, err := cmd.StdinPipe()
 	if err != nil {
+		fmt.Printf("%v\n",err)
+		quiteChan<-stopPushFrame
+		quiteChan<-stopPushFrame
 		wg.Done()
-		log.Fatal(err)
+		return
 	}
 	defer cmdIn.Close()
 	if err := cmd.Start(); err != nil {
+		fmt.Printf("%v\n",err)
+		quiteChan<-stopPushFrame
+		quiteChan<-stopPushFrame
 		wg.Done()
-		log.Fatal(err)
+		return
 	}
 
-	for {
+loopPushFrame: for {
+		// select for listenning quite msg from get/rec frame routine
+		select {
+		case qMsg := <-quiteChan:
+			if qMsg == 1{
+				fmt.Printf(" quite msg from get frame routine.")
+				break loopPushFrame
+			}else if qMsg == 2{
+				fmt.Printf(" quite msg from rec frame routine.")
+				break loopPushFrame
+			}
+		case <-time.After(3 * time.Millisecond):
+			// wait 3 ms, do nothing while timeout
+		}
+
 		if recedQueue.Length() > 0 {
 			queueImg := recedQueue.Get(0)
 			switch qImg := queueImg.(type) {
@@ -599,9 +657,10 @@ func pushToRtmpFromRecedQueue(recedQueue *queue.Queue,rArgsChan <-chan string){
 			//push to rtmp server
 			_, err := cmdIn.Write([]byte(img.ToBytes()))
 			if err != nil {
-				fmt.Printf("%v", err)
-				//break
-				continue
+				fmt.Printf("%v\n", err)
+				quiteChan<-stopPushFrame
+				quiteChan<-stopPushFrame
+				break
 			}
 		}
 	}
