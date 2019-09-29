@@ -605,6 +605,16 @@ func pushToRtmpFromRecedQueue(recedQueue *queue.Queue,rArgsChan <-chan string,qu
 	//defer window.Close()
 	//fmt.Println("NewWindow ok")
 
+	// just for problem with ffmpeg push...add this will no more show error,i don't know why
+	// load classifier to recognize faces
+	classifier := gocv.NewCascadeClassifier()
+	defer classifier.Close()
+	if !classifier.Load("data/haarcascade_frontalface_default.xml") {
+		fmt.Println("Error reading cascade file: data/haarcascade_frontalface_default.xml")
+		wg.Done()
+		return
+	}
+
 	//for ffmpeg push to rtmp server
 	cmdArgs := <-rArgsChan
 	list := strings.Split(cmdArgs, " ")
@@ -653,6 +663,11 @@ loopPushFrame: for {
 			// show the image in the window, and wait 1 millisecond
 			//window.IMShow(img)
 			//window.WaitKey(1)
+
+			// just for problem with ffmpeg push...add this will no more show error,i don't know why
+			// detect faces
+			rects := classifier.DetectMultiScale(img)
+			fmt.Printf("found %d faces\n", len(rects))
 
 			//push to rtmp server
 			_, err := cmdIn.Write([]byte(img.ToBytes()))
