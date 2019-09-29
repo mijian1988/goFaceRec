@@ -477,10 +477,10 @@ loopGetFrame: for {
 		select {
 		case qMsg := <-quiteChan:
 			if qMsg == 2{
-				fmt.Printf(" quite msg from rec frame routine.")
+				fmt.Printf(" quite msg from rec frame routine.\n")
 				break loopGetFrame
 			}else if qMsg == 3{
-				fmt.Printf(" quite msg from push frame routine.")
+				fmt.Printf(" quite msg from push frame routine.\n")
 				break loopGetFrame
 			}
 		case <-time.After(3 * time.Millisecond):
@@ -531,10 +531,10 @@ loopRecFrame: for {
 		select {
 		case qMsg := <-quiteChan:
 			if qMsg == 1{
-				fmt.Printf(" quite msg from get frame routine.")
+				fmt.Printf(" quite msg from get frame routine.\n")
 				break loopRecFrame
 			}else if qMsg == 3{
-				fmt.Printf(" quite msg from push frame routine.")
+				fmt.Printf(" quite msg from push frame routine.\n")
 				break loopRecFrame
 			}
 		case <-time.After(3 * time.Millisecond):
@@ -643,10 +643,10 @@ loopPushFrame: for {
 		select {
 		case qMsg := <-quiteChan:
 			if qMsg == 1{
-				fmt.Printf(" quite msg from get frame routine.")
+				fmt.Printf(" quite msg from get frame routine.\n")
 				break loopPushFrame
 			}else if qMsg == 2{
-				fmt.Printf(" quite msg from rec frame routine.")
+				fmt.Printf(" quite msg from rec frame routine.\n")
 				break loopPushFrame
 			}
 		case <-time.After(3 * time.Millisecond):
