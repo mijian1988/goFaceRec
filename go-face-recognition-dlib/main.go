@@ -561,7 +561,7 @@ loopRecFrame: for {
 			if faces == nil {
 				fmt.Printf("No faces on the image\n")
 			}
-			fmt.Println("Number of Faces in Image: \n", len(faces))
+			fmt.Println("Number of Faces in Image: ", len(faces))
 
 			// rec each face in img
 			for i, f := range faces {
