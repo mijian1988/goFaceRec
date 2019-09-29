@@ -611,6 +611,8 @@ func pushToRtmpFromRecedQueue(recedQueue *queue.Queue,rArgsChan <-chan string,qu
 	defer classifier.Close()
 	if !classifier.Load("data/haarcascade_frontalface_default.xml") {
 		fmt.Println("Error reading cascade file: data/haarcascade_frontalface_default.xml")
+		quiteChan<-stopPushFrame
+		quiteChan<-stopPushFrame
 		wg.Done()
 		return
 	}
