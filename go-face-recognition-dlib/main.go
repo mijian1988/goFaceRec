@@ -665,8 +665,9 @@ loopPushFrame: for {
 
 			// just for problem with ffmpeg push...add this will no more show error,i don't know why
 			// detect faces
-			rects := classifier.DetectMultiScale(pushImg)
-			fmt.Printf("found %d faces\n", len(rects))
+			//rects := classifier.DetectMultiScale(pushImg)
+			//fmt.Printf("found %d faces\n", len(rects))
+			classifier.DetectMultiScale(pushImg)
 
 			//push to rtmp server
 			_, err := cmdIn.Write([]byte(pushImg.ToBytes()))
