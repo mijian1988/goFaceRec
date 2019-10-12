@@ -418,7 +418,7 @@ func cameraMultiObjShowRecFacesWithName2(rec *face.Recognizer,labels[] string){
 	// set src
 	//deviceID := 0
 	//deviceID := "rtmp://58.200.131.2:1935/livetv/hunantv"
-	deviceID := "rtmp://192.168.0.30:1935/live/movie"
+	deviceID := "rtmp://192.168.11.174:1935/live/movie"
 
 	// open webCam
 	webCam, err := gocv.OpenVideoCapture(deviceID)
@@ -536,8 +536,7 @@ loopRecFrame: for {
 					continue
 			}
 
-			// get each face's name from lables[]
-			///////////////////////////////////////////////////////////////////////////////
+			// rec each face in recImg,
 			gocv.IMWrite(cameraTmpImgPath,recImg)
 			faces, err := rec.RecognizeFileCNN(cameraTmpImgPath)
 			//faces, err := rec.RecognizeCNN([]byte(recImg.ToBytes()))
@@ -545,33 +544,32 @@ loopRecFrame: for {
 				fmt.Printf("Can't recognize...\n")
 			}
 			if faces == nil {
-				fmt.Printf("No faces on the image\n")
+				//fmt.Printf("No faces on the image\n")
 			}
-			fmt.Println("Number of Faces in Image: ", len(faces))
+			//fmt.Println("Number of Faces in Image: ", len(faces))
 
-			// rec each face in recImg
-			for i, f := range faces {
-				faceID :=rec.ClassifyThreshold(f.Descriptor,0.35)
-				if faceID < 0 {
-					recCamMultiName[i] = "unkown"
-				}else {
-					recCamMultiName[i] = labels[faceID]
+			if len(faces) > 0{
+				// get each face's name from lables[]
+				for i, f := range faces {
+					faceID :=rec.ClassifyThreshold(f.Descriptor,0.30)
+					if faceID < 0 {
+						recCamMultiName[i] = "unkown"
+					}else {
+						recCamMultiName[i] = labels[faceID]
+					}
+				}
+
+				// set name and rectangle on recImg
+				// draw a rectangle around each face on the original image
+				for i, r := range faces {
+					gocv.Rectangle(&recImg, r.Rectangle, blue, 2)
+
+					//size := gocv.GetTextSize(recCamMultiName[i], gocv.FontHersheyPlain, 1.2, 2)
+					//pt := image.Pt(r.Rectangle.Min.X+(r.Rectangle.Min.X/2)-(size.X/2), r.Rectangle.Min.Y-2)
+					pt := image.Pt(r.Rectangle.Min.X, r.Rectangle.Min.Y-20)
+					gocv.PutText(&recImg, recCamMultiName[i], pt, gocv.FontHersheyPlain, 2, blue, 2)
 				}
 			}
-			///////////////////////////////////////////////////////////////////////////////
-
-			// set name and rectangle on recImg
-			///////////////////////////////////////////////////////////////////////////////
-			// draw a rectangle around each face on the original image
-			for i, r := range faces {
-				gocv.Rectangle(&recImg, r.Rectangle, blue, 2)
-
-				//size := gocv.GetTextSize(recCamMultiName[i], gocv.FontHersheyPlain, 1.2, 2)
-				//pt := image.Pt(r.Rectangle.Min.X+(r.Rectangle.Min.X/2)-(size.X/2), r.Rectangle.Min.Y-2)
-				pt := image.Pt(r.Rectangle.Min.X, r.Rectangle.Min.Y-20)
-				gocv.PutText(&recImg, recCamMultiName[i], pt, gocv.FontHersheyPlain, 2, blue, 2)
-			}
-			///////////////////////////////////////////////////////////////////////////////
 
 			// put frame into rQueue
 			rQueue.Add(recImg)
@@ -614,7 +612,7 @@ func pushToRtmpFromRecedQueue(webCam *gocv.VideoCapture,recedQueue *queue.Queue,
 		"-r",
 		fps,
 		"-i - -c:v libx264 -pix_fmt yuv420p -preset ultrafast -f flv",
-		"rtmp://192.168.0.193:1935/live/movie",
+		"rtmp://192.168.11.174:1935/live/movied",
 	)
 	list := strings.Split(cmdArgs, " ")
 	cmd := exec.Command(list[0], list[1:]...)
