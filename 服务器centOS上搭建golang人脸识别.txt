@@ -1,0 +1,129 @@
+一 安装依赖
+	1.1 升级gcc到7.x.x:
+		1.1.1 升级到7.3.1：
+			root：执行如下命令进行安装
+				yum install centos-release-scl scl-utils-build
+				yum list all --enablerepo='centos-sclo-rh' | grep "devtoolset-"
+				yum install -y devtoolset-7
+				scl enable devtoolset-7 bash
+				
+			mj：执行如下命令使能gcc-7
+				手动设置gcc ENV:
+					scl enable devtoolset-7 bash
+				
+	1.2 安装golang:
+		tar -zvxf go1.12.9.linux-amd64.tar.gz -C /home/mj/goRoot/
+		vi ~/.bashrc
+			export GOROOT=/home/mj/goRoot/go 
+			export GOBIN=$GOROOT/bin
+			export GOPKG=$GOROOT/pkg/tool/linux_amd64 
+			export GOARCH=amd64
+			export GOOS=linux
+			export GOPATH=/home/mj/golang/
+			export PATH=$PATH:$GOBIN:$GOPKG:$GOPATH/bin
+		source ~/.bashrc
+		go env
+			
+	1.3 安装opencv:
+		1.3.1 依赖：
+			yum install cmake git gtk2-devel python-devel numpy libv4l-devel libtiff-devel 
+			yum install libpng-devel libjpeg-devel libjasper-dev jasper-utils ffmpeg ffmpeg-devel
+			yum install pkgconfig x264 vidcore libdc1394-devel libavc1394-devel gstreamer-plugins-base-devel
+			未安装成功的包：
+				yum install libtbb2 libtbb-dev	# 处理图像所需的包,[optional]
+				yum install libavcodec-dev libavformat-dev libswscale-dev liblapacke-dev
+				yum install libatlas-base-dev gfortran 	# 优化opencv功能
+		1.3.2 安装过程
+			unzip opencv-4.1.1.zip
+			cd opencv-4.1.1/
+			mkdir build && cd build
+			sudo mkdir -p /usr/local/opencv4
+			cmake -D CMAKE_BUILD_TYPE=Release -D OPENCV_GENERATE_PKGCONFIG=YES -D CMAKE_INSTALL_PREFIX=/usr/local/opencv4 ..
+			make -j20
+			sudo make install
+	
+			升级cmake版本到3.14.3：
+				wget https://cmake.org/files/v3.14/cmake-3.14.3.tar.gz
+				tar xzvf cmake-3.14.3.tar.gz
+				cd cmake-3.14.3
+				./bootstrap
+				gmake
+				sudo make install
+		1.3.3 OpenCV配置环境:
+			3.1 pkg-config环境
+				3.1.1 sudo vim ~/.bashrc
+					添加如下内容：
+						export PKG_CONFIG_PATH=/usr/local/opencv4/lib64/pkgconfig/:$PKG_CONFIG_PATH:
+					source ~/.bashrc
+				3.1.2 验证是否配置成功：
+					pkg-config --libs opencv4
+			3.2 配置OpenCV编译环境,添加加载动态库so库的路径:
+				3.2.1 sudo vim /etc/ld.so.conf.d/opencv4.conf
+					该文件（可能是空文件）末尾加上：
+						/usr/local/opencv4/lib64
+				3.2.2 使刚才配置的路径生效:
+					sudo ldconfig
+		1.3.4 清理安装：
+			rm -rf build
+		1.3.5 验证：
+			go get -u gocv.io/x/gocv
+			git clone https://github.com/mijian1988/goFaceRec
+			cd goFaceRec/go-face-recognition-opencv
+			读取图片,框出人脸,显示：
+				go run goShowImage.go mj.jpg
+			读取摄像头流，框出人脸，实时显示：
+				go run goCameraShow.go
+				
+	1.4 安装dlib:
+		1.4.0 依赖安装：
+		yum install boost boost-devel boost-doc
+		yum install openblas openblas-devel libjpeg-turbo
+		
+		1.4.1 安装dlib:
+			手动安装dlib:
+				1.4.1.1 拷贝解压：
+					scp ./dlib-19.18.zip mj@192.168.11.174:/home/mj/prepare/dlib-19.18.zip
+					unzip dlib-19.18.zip
+					cd dlib-19.18/dlib
+				1.4.1.2 创建build文件夹：
+					mkdir build && cd build
+				1.4.1.3 生成预编译文件(编译动态库使用：cmake -DBUILD_SHARED_LIBS=ON ..)：
+					cmake ..
+					注1：
+						出错提示：
+							-- Found OpenMP: TRUE (found version "4.5")  
+							-- Enabling CUDA support for dlib.  DLIB WILL USE CUDA
+							-- C++11 activated.
+							CMake Error: The following variables are used in this project, but they are set to NOTFOUND.
+							Please set them or make sure they are set and tested correctly in the CMake files:
+							CUDA_cublas_device_LIBRARY (ADVANCED)
+								linked by target "dlib" in directory /home/mj/prepare/dlib-19.10/dlib
+							cusolver (ADVANCED)
+								linked by target "dlib" in directory /home/mj/prepare/dlib-19.10/dlib
+
+							-- Configuring incomplete, errors occurred!
+						解决办法：
+							升级cmake版本到3.14.3：
+								wget https://cmake.org/files/v3.14/cmake-3.14.3.tar.gz
+								tar xzvf cmake-3.14.3.tar.gz
+								cd cmake-3.14.3
+								./bootstrap
+								gmake
+								sudo make install
+				1.4.1.4 编译：
+					cmake --build . --config Release -- -j4
+				1.4.1.5 安装：
+					sudo make install
+				1.4.1.6 配置：
+					vim ~/.bashrc
+						export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/usr/local/lib64/pkgconfig/:/usr/local/opencv4/lib64/pkgconfig/:
+	
+	1.5 注意：安装依赖包时，找不到包的情况下：
+		sudo yum install epel-release
+		sudo rpm -Uvh http://li.nux.ro/download/nux/dextop/el7/x86_64/nux-dextop-release-0-1.el7.nux.noarch.rpm
+		sudo rpm -Uvh https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+		sudo rpm -Uvh https://mirror.webtatic.com/yum/el7/webtatic-release.rpm
+二 运行
+	cd goFaceRec/go-face-recognition-dlib
+	go run main.go 3
+	
