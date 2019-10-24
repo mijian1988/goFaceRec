@@ -20,11 +20,12 @@
 			opencv-4.1.1.zip
 	2 安装过程
 		unzip opencv-4.1.1.zip
+		unzip opencv_contrib-4.1.1.zip
 		cd opencv-4.1.1/
 		mkdir build
 		cd build/
 		sudo mkdir -p /usr/local/opencv4
-		cmake -D CMAKE_BUILD_TYPE=Release -D OPENCV_GENERATE_PKGCONFIG=YES -D CMAKE_INSTALL_PREFIX=/usr/local/opencv4 ..
+		cmake -D CMAKE_BUILD_TYPE=Release -D OPENCV_GENERATE_PKGCONFIG=YES -D CMAKE_INSTALL_PREFIX=/usr/local/opencv4 -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib/modules ..
 		make -j8
 		sudo make install
 		
