@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/Kagami/go-face"
 	"gocv.io/x/gocv"
+	"gocv.io/x/gocv/contrib"
 	"gopkg.in/eapache/queue.v1"
 	"image"
 	"image/color"
@@ -510,6 +511,10 @@ func recFaceAndMarkName(fQueue *queue.Queue,rQueue *queue.Queue,quiteChan chan i
 	var recCamMultiName[30] string
 	cameraTmpImgPath := filepath.Join(testDir, "cameratmptest.jpg")
 
+	var trackers []contrib.Tracker
+	var lastFaceCnt int
+	var trackAll bool
+
 loopRecFrame: for {
 		// select for listenning quite msg from get/push frame routine
 		select {
@@ -536,6 +541,8 @@ loopRecFrame: for {
 					continue
 			}
 
+			////////////////////////////////////////////////////////////////////
+			/*
 			// rec each face in recImg,
 			gocv.IMWrite(cameraTmpImgPath,recImg)
 			faces, err := rec.RecognizeFileCNN(cameraTmpImgPath)
@@ -568,6 +575,77 @@ loopRecFrame: for {
 					//pt := image.Pt(r.Rectangle.Min.X+(r.Rectangle.Min.X/2)-(size.X/2), r.Rectangle.Min.Y-2)
 					pt := image.Pt(r.Rectangle.Min.X, r.Rectangle.Min.Y-20)
 					gocv.PutText(&recImg, recCamMultiName[i], pt, gocv.FontHersheyPlain, 2, blue, 2)
+				}
+			}
+			 */
+			////////////////////////////////////////////////////////////////////
+
+			// rec each face in recImg,
+			gocv.IMWrite(cameraTmpImgPath,recImg)
+			faces, err := rec.RecognizeFileCNN(cameraTmpImgPath)
+			//faces, err := rec.RecognizeCNN([]byte(recImg.ToBytes()))
+			if err != nil {
+				fmt.Printf("Can't recognize...\n")
+			}
+			if faces == nil {
+				//fmt.Printf("No faces on the image\n")
+			}
+			fmt.Printf("lastFaceCnt=%d,len(faces)=%d\n",lastFaceCnt,len(faces))
+
+			if len(trackers) == 0 || lastFaceCnt != len(faces){
+				// rec frame
+				// clear condition
+				fmt.Printf("%s\n","rec.....")
+				trackers = trackers[0:0]
+
+				if len(faces) > 0{
+					// get each face's name from lables[] and init tracker...
+					for i, f := range faces {
+						faceID :=rec.ClassifyThreshold(f.Descriptor,0.30)
+						if faceID < 0 {
+							recCamMultiName[i] = "unkown"
+						}else {
+							recCamMultiName[i] = labels[faceID]
+						}
+
+						//trackerStr := fmt.Sprintf("%s%d_%s","tracker",i,recCamMultiName[i])
+						tracker := contrib.NewTrackerMedianFlow()
+						tracker.Init(recImg,f.Rectangle)
+						trackers = append(trackers, tracker)
+					}
+				}
+
+				lastFaceCnt = len(faces)
+			}else if len(trackers) !=0 && lastFaceCnt == len(faces){
+				// tracker frame
+				fmt.Printf("%s\n","tracker.....")
+				trackAll = true
+
+				for i, t := range trackers {
+					r, ok := t.Update(recImg)
+					if ok {
+						gocv.Rectangle(&recImg, r, blue, 3)
+						pt := image.Pt(r.Min.X, r.Min.Y-20)
+						gocv.PutText(&recImg, recCamMultiName[i], pt, gocv.FontHersheyPlain, 2, blue, 3)
+
+						// use faces point to rectangle
+						//gocv.Rectangle(&recImg, faces[i].Rectangle, blue, 3)
+						//pt := image.Pt(faces[i].Rectangle.Min.X, faces[i].Rectangle.Min.Y-20)
+						//gocv.PutText(&recImg, recCamMultiName[i], pt, gocv.FontHersheyPlain, 2, blue, 2)
+					}else{
+						fmt.Printf("track %s failed,reInit tracker again.\n",recCamMultiName[i])
+						trackAll = false
+						break
+					}
+				}
+
+				// tracking someone failed,reRecognize to track
+				if !trackAll{
+					for _, t := range trackers {
+						t.Close()
+					}
+
+					trackers = trackers[0:0]
 				}
 			}
 
