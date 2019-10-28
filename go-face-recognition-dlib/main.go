@@ -273,7 +273,7 @@ func main() {
 		// method 1	: capture frmae,rec frame,push frmae with one routine
 		//cameraMultiObjShowRecFacesWithName1(rec,labels)
 
-		// method 2 : capture frmae,rec frame,push frmae with independent routine
+		// method 2 : capture frmae,rec&&push frmae with two routines
 		cameraMultiObjShowRecFacesWithName2(rec,labels)
 	}
 ////////////////////////////////////////////////////////////////////////
@@ -408,12 +408,10 @@ func cameraMultiObjShowRecFacesWithName1(rec *face.Recognizer,labels[] string){
 var wg sync.WaitGroup
 const stopGetFrame int = 1
 const stopRecFrame int = 2
-const stopPushFrame int = 3
 func cameraMultiObjShowRecFacesWithName2(rec *face.Recognizer,labels[] string){
 	frameQueue := queue.New() // queue for frame from camera
-	recedQueue := queue.New() // queue for frame from frameQueue,using for recedframe
 
-	quiteChan := make(chan int,2) // quite channel for sync 3 routines
+	quiteChan := make(chan int,1) // quite channel for sync 2 routines
 	defer close(quiteChan)
 
 	// set src
@@ -435,14 +433,10 @@ func cameraMultiObjShowRecFacesWithName2(rec *face.Recognizer,labels[] string){
 	wg.Add(1)
 	time.Sleep(1)
 
-	// get frame from frameQueue to rec,then store it in recedQueue for pushing to rtmp server
-	go recFaceAndMarkName(frameQueue,recedQueue,quiteChan,rec,labels)
+	// get frame from frameQueue to rec && tracke,then push it to rtmp server
+	go recFaceAndMarkName(webCam,frameQueue,quiteChan,rec,labels)
 	wg.Add(1)
 	time.Sleep(1)
-
-	// get frame from recedQueue to push with ffmpeg
-	go pushToRtmpFromRecedQueue(webCam,recedQueue,quiteChan)
-	wg.Add(1)
 
 	wg.Wait()
 	fmt.Println("main exit...")
@@ -462,9 +456,6 @@ loopGetFrame: for {
 				if qMsg == 2{
 					fmt.Printf("get routine: quite msg from rec frame routine.\n")
 					break loopGetFrame
-				}else if qMsg == 3{
-					fmt.Printf("get routine: quite msg from push frame routine.\n")
-					break loopGetFrame
 				}
 			default:
 				// do nothing
@@ -476,7 +467,6 @@ loopGetFrame: for {
 			// read frame from cam
 			if ok := webCam.Read(&img); !ok {
 				fmt.Printf("cannot read webCam device.\n")
-				quiteChan<-stopGetFrame
 				quiteChan<-stopGetFrame
 				break
 			}
@@ -493,13 +483,12 @@ loopGetFrame: for {
 		} else {
 			fmt.Println("webCam has been closed!")
 			quiteChan<-stopGetFrame
-			quiteChan<-stopGetFrame
 			break
 		}
 	}
 }
 
-func recFaceAndMarkName(fQueue *queue.Queue,rQueue *queue.Queue,quiteChan chan int,rec *face.Recognizer,labels[] string){
+func recFaceAndMarkName(webCam *gocv.VideoCapture,fQueue *queue.Queue,quiteChan chan int,rec *face.Recognizer,labels[] string){
 	defer wg.Done()
 
 	// prepare image matrix
@@ -515,15 +504,41 @@ func recFaceAndMarkName(fQueue *queue.Queue,rQueue *queue.Queue,quiteChan chan i
 	var lastFaceCnt int
 	var trackAll bool
 
+	// for ffmpeg push to rtmp server
+	// get webCam ops:width/height/fps
+	width := int(webCam.Get(gocv.VideoCaptureFrameWidth))
+	height := int(webCam.Get(gocv.VideoCaptureFrameHeight))
+	fps := int(webCam.Get(gocv.VideoCaptureFPS))
+
+	cmdArgs := fmt.Sprintf("%s %s %s %d %s %s",
+		"ffmpeg -y -an -f rawvideo -vcodec rawvideo -pix_fmt bgr24 -s",
+		fmt.Sprintf("%dx%d", width, height),
+		"-r",
+		fps,
+		"-i - -c:v libx264 -pix_fmt yuv420p -preset ultrafast -f flv",
+		"rtmp://192.168.11.174:1935/live/movied",
+	)
+	list := strings.Split(cmdArgs, " ")
+	cmd := exec.Command(list[0], list[1:]...)
+	cmdIn, err := cmd.StdinPipe()
+	if err != nil {
+		fmt.Printf("%v\n",err)
+		quiteChan<-stopRecFrame
+		return
+	}
+	defer cmdIn.Close()
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("%v\n",err)
+		quiteChan<-stopRecFrame
+		return
+	}
+
 loopRecFrame: for {
 		// select for listenning quite msg from get/push frame routine
 		select {
 			case qMsg := <-quiteChan:
 				if qMsg == 1{
 					fmt.Printf("rec routine: quite msg from get frame routine.\n")
-					break loopRecFrame
-				}else if qMsg == 3{
-					fmt.Printf("rec routine: quite msg from push frame routine.\n")
 					break loopRecFrame
 				}
 			default:
@@ -542,8 +557,7 @@ loopRecFrame: for {
 			}
 
 			////////////////////////////////////////////////////////////////////
-			/*
-			// rec each face in recImg,
+			// rec each face in recImg
 			gocv.IMWrite(cameraTmpImgPath,recImg)
 			faces, err := rec.RecognizeFileCNN(cameraTmpImgPath)
 			//faces, err := rec.RecognizeCNN([]byte(recImg.ToBytes()))
@@ -553,49 +567,11 @@ loopRecFrame: for {
 			if faces == nil {
 				//fmt.Printf("No faces on the image\n")
 			}
-			//fmt.Println("Number of Faces in Image: ", len(faces))
-
-			if len(faces) > 0{
-				// get each face's name from lables[]
-				for i, f := range faces {
-					faceID :=rec.ClassifyThreshold(f.Descriptor,0.30)
-					if faceID < 0 {
-						recCamMultiName[i] = "unkown"
-					}else {
-						recCamMultiName[i] = labels[faceID]
-					}
-				}
-
-				// set name and rectangle on recImg
-				// draw a rectangle around each face on the original image
-				for i, r := range faces {
-					gocv.Rectangle(&recImg, r.Rectangle, blue, 2)
-
-					//size := gocv.GetTextSize(recCamMultiName[i], gocv.FontHersheyPlain, 1.2, 2)
-					//pt := image.Pt(r.Rectangle.Min.X+(r.Rectangle.Min.X/2)-(size.X/2), r.Rectangle.Min.Y-2)
-					pt := image.Pt(r.Rectangle.Min.X, r.Rectangle.Min.Y-20)
-					gocv.PutText(&recImg, recCamMultiName[i], pt, gocv.FontHersheyPlain, 2, blue, 2)
-				}
-			}
-			 */
-			////////////////////////////////////////////////////////////////////
-
-			// rec each face in recImg,
-			gocv.IMWrite(cameraTmpImgPath,recImg)
-			faces, err := rec.RecognizeFileCNN(cameraTmpImgPath)
-			//faces, err := rec.RecognizeCNN([]byte(recImg.ToBytes()))
-			if err != nil {
-				fmt.Printf("Can't recognize...\n")
-			}
-			if faces == nil {
-				//fmt.Printf("No faces on the image\n")
-			}
-			fmt.Printf("lastFaceCnt=%d,len(faces)=%d\n",lastFaceCnt,len(faces))
+			//fmt.Printf("lastFaceCnt=%d,len(faces)=%d\n",lastFaceCnt,len(faces))
 
 			if len(trackers) == 0 || lastFaceCnt != len(faces){
-				// rec frame
+				// rec name from faces && init tracker for each face.
 				// clear condition
-				fmt.Printf("%s\n","rec.....")
 				trackers = trackers[0:0]
 
 				if len(faces) > 0{
@@ -608,7 +584,6 @@ loopRecFrame: for {
 							recCamMultiName[i] = labels[faceID]
 						}
 
-						//trackerStr := fmt.Sprintf("%s%d_%s","tracker",i,recCamMultiName[i])
 						tracker := contrib.NewTrackerMedianFlow()
 						tracker.Init(recImg,f.Rectangle)
 						trackers = append(trackers, tracker)
@@ -617,8 +592,7 @@ loopRecFrame: for {
 
 				lastFaceCnt = len(faces)
 			}else if len(trackers) !=0 && lastFaceCnt == len(faces){
-				// tracker frame
-				fmt.Printf("%s\n","tracker.....")
+				// track frame
 				trackAll = true
 
 				for i, t := range trackers {
@@ -648,109 +622,13 @@ loopRecFrame: for {
 					trackers = trackers[0:0]
 				}
 			}
-
-			// put frame into rQueue
-			rQueue.Add(recImg)
-		}
-	}
-}
-
-func pushToRtmpFromRecedQueue(webCam *gocv.VideoCapture,recedQueue *queue.Queue,quiteChan chan int){
-	defer wg.Done()
-
-	// prepare image matrix
-	pushImg := gocv.NewMat()
-	defer pushImg.Close()
-
-	// open display window
-	//window := gocv.NewWindow("Face Detect")
-	//defer window.Close()
-	//fmt.Println("NewWindow ok")
-
-	// just for problem with ffmpeg push...add this will no more show error,i don't know why
-	// load classifier to recognize faces
-	classifier := gocv.NewCascadeClassifier()
-	defer classifier.Close()
-	if !classifier.Load("data/haarcascade_frontalface_default.xml") {
-		fmt.Println("Error reading cascade file: data/haarcascade_frontalface_default.xml")
-		quiteChan<-stopPushFrame
-		quiteChan<-stopPushFrame
-		return
-	}
-
-	// for ffmpeg push to rtmp server
-	// get webCam ops:width/height/fps
-	width := int(webCam.Get(gocv.VideoCaptureFrameWidth))
-	height := int(webCam.Get(gocv.VideoCaptureFrameHeight))
-	fps := int(webCam.Get(gocv.VideoCaptureFPS))
-
-	cmdArgs := fmt.Sprintf("%s %s %s %d %s %s",
-		"ffmpeg -y -an -f rawvideo -vcodec rawvideo -pix_fmt bgr24 -s",
-		fmt.Sprintf("%dx%d", width, height),
-		"-r",
-		fps,
-		"-i - -c:v libx264 -pix_fmt yuv420p -preset ultrafast -f flv",
-		"rtmp://192.168.11.174:1935/live/movied",
-	)
-	list := strings.Split(cmdArgs, " ")
-	cmd := exec.Command(list[0], list[1:]...)
-	cmdIn, err := cmd.StdinPipe()
-	if err != nil {
-		fmt.Printf("%v\n",err)
-		quiteChan<-stopPushFrame
-		quiteChan<-stopPushFrame
-		return
-	}
-	defer cmdIn.Close()
-	if err := cmd.Start(); err != nil {
-		fmt.Printf("%v\n",err)
-		quiteChan<-stopPushFrame
-		quiteChan<-stopPushFrame
-		return
-	}
-
-loopPushFrame: for {
-		// select for listenning quite msg from get/rec frame routine
-		select {
-			case qMsg := <-quiteChan:
-				if qMsg == 1{
-					fmt.Printf("push routine: quite msg from get frame routine.\n")
-					break loopPushFrame
-				}else if qMsg == 2{
-					fmt.Printf("push routine: quite msg from rec frame routine.\n")
-					break loopPushFrame
-				}
-			default:
-				// do nothing
-			//case <-time.After(3 * time.Millisecond):
-				// wait 3 ms, do nothing while timeout
-		}
-
-		if recedQueue.Length() > 0 {
-			queueImg := recedQueue.Get(0)
-			switch qImg := queueImg.(type) {
-				case gocv.Mat:
-					pushImg = qImg
-				default:
-					continue
-			}
-
-			// show the image in the window, and wait 1 millisecond
-			//window.IMShow(pushImg)
-			//window.WaitKey(1)
-
-			// just for problem with ffmpeg push...add this will no more show error,i don't know why
-			// detect faces
-			//rects := classifier.DetectMultiScale(pushImg)
-			//fmt.Printf("found %d faces\n", len(rects))
-			classifier.DetectMultiScale(pushImg)
+			////////////////////////////////////////////////////////////////////
 
 			//push to rtmp server
-			_, err := cmdIn.Write([]byte(pushImg.ToBytes()))
+			_, err = cmdIn.Write([]byte(recImg.ToBytes()))
 			if err != nil {
 				fmt.Printf("%v\n", err)
-				quiteChan<-stopPushFrame
-				quiteChan<-stopPushFrame
+				quiteChan<-stopRecFrame
 				break
 			}
 		}
