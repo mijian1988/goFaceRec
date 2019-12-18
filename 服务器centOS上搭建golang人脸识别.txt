@@ -50,6 +50,7 @@
 				./bootstrap
 				gmake
 				sudo make install
+			note: must add "-D CMAKE_SHARED_LINKER_FLAGS='-latomic' " while camke in raspberry system!
 		1.3.3 OpenCV配置环境:
 			3.1 pkg-config环境
 				3.1.1 sudo vim ~/.bashrc
